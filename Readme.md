@@ -11,7 +11,7 @@
   <img src="https://github.com/Nice3point/InterprocessCommunication/assets/20504884/21d38cc0-9dfe-46af-959d-8deffaf91b3c" />
 </p>
 
-<p style="text-align: center;">Технологии развиваются, а Revit не меняется © Конфуций</p>
+<p align="center" style="color: grey;">Технологии развиваются, а Revit не меняется © Конфуций</p>
 
 # Введение в использование Named Pipes для общения между приложениями на разных версиях .NET
 
