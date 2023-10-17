@@ -92,7 +92,7 @@ public class PrintMessageRequest : Request
 /// 
 ///  Field Name         Type            Size (bytes)
 /// --------------------------------------------------
-///  RequestType       Integer         4
+///  RequestType        Integer         4
 ///  Iterations         Integer         4
 ///  ForceUpdate        Boolean         1
 ///  ModelName          String          Variable
