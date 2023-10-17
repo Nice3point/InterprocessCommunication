@@ -973,6 +973,147 @@ private async Task DeleteElementsAsync()
 }
 ```
 
+# Установка .Net Runtime во время установки
+
+Не у каждого пользователя может быть установлена последняя версия .Net Runtime на локальной машине, нам необходимо внести изменения в установщик плагина.
+
+Если вы используете шаблоны [Nice3point.RevitTemplates](https://github.com/Nice3point/RevitTemplates), то внести изменения не составит труда.
+В шаблонах используется библиотека WixSharp, которая позволяет создавать .msi файлы прямо на C#.
+
+Для добавления пользовательских действий, и установки .Net Runtime создадим `CustomAction`
+
+```C#
+public static class RuntimeActions
+{
+    /// <summary>
+    ///     Add-in client .Net version
+    /// </summary>
+    private const string DotnetRuntimeVersion = "7";
+
+    /// <summary>
+    ///     Direct download link
+    /// </summary>
+    private const string DotnetRuntimeUrl = $"https://aka.ms/dotnet/{DotnetRuntimeVersion}.0/windowsdesktop-runtime-win-x64.exe";
+
+    /// <summary>
+    ///     Installing the .Net runtime after installing software
+    /// </summary>
+    [CustomAction]
+    public static ActionResult InstallDotnet(Session session)
+    {
+        try
+        {
+            var isRuntimeInstalled = CheckDotnetInstallation();
+            if (isRuntimeInstalled) return ActionResult.Success;
+
+            var destinationPath = Path.Combine(Path.GetTempPath(), "windowsdesktop-runtime-win-x64.exe");
+
+            UpdateStatus(session, "Downloading .NET runtime");
+            DownloadRuntime(destinationPath);
+
+            UpdateStatus(session, "Installing .NET runtime");
+            var status = InstallRuntime(destinationPath);
+
+            var result = status switch
+            {
+                0 => ActionResult.Success,
+                1602 => ActionResult.UserExit,
+                1618 => ActionResult.Success,
+                _ => ActionResult.Failure
+            };
+
+            File.Delete(destinationPath);
+            return result;
+        }
+        catch (Exception exception)
+        {
+            session.Log("Error downloading and installing DotNet: " + exception.Message);
+            return ActionResult.Failure;
+        }
+    }
+
+    private static int InstallRuntime(string destinationPath)
+    {
+        var startInfo = new ProcessStartInfo(destinationPath)
+        {
+            Arguments = "/q",
+            UseShellExecute = false
+        };
+
+        var installProcess = Process.Start(startInfo)!;
+        installProcess.WaitForExit();
+        return installProcess.ExitCode;
+    }
+
+    private static void DownloadRuntime(string destinationPath)
+    {
+        ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12 | SecurityProtocolType.Tls11 | SecurityProtocolType.Tls;
+
+        using var httpClient = new HttpClient();
+        var responseBytes = httpClient.GetByteArrayAsync(DotnetRuntimeUrl).Result;
+
+        File.WriteAllBytes(destinationPath, responseBytes);
+    }
+
+    private static bool CheckDotnetInstallation()
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "dotnet",
+            Arguments = "--list-runtimes",
+            RedirectStandardOutput = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+
+        try
+        {
+            var process = Process.Start(startInfo)!;
+            var output = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+
+            return output.Split('\n')
+                .Where(line => line.Contains("Microsoft.WindowsDesktop.App"))
+                .Any(line => line.Contains($"{DotnetRuntimeVersion}."));
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void UpdateStatus(Session session, string message)
+    {
+        var record = new Record(3);
+        record[2] = message;
+
+        session.Message(InstallMessage.ActionStart, record);
+    }
+}
+```
+
+Этот код проверяет, установлена ли требуемая версия .Net на локальной машине, и если нет, то скачивает и устанавливает ее.
+Во время установки обновляется Status текущего хода выполнения скачивания и распаковки Runtime.
+
+Осталось подключить этот Action в сам проект WixSharp, для этого инициализируем свойство `Actions`:
+
+```C#
+var project = new Project
+{
+    Name = "Wix Installer",
+    UI = WUI.WixUI_FeatureTree,
+    GUID = new Guid("8F2926C8-3C6C-4D12-9E3C-7DF611CD6DDF"),
+    Actions = new Action[]
+    {
+        new ManagedAction(RuntimeActions.InstallDotnet, 
+            Return.check,
+            When.Before,
+            Step.InstallFinalize,
+            Condition.NOT_Installed)
+    }
+};
+```
+
 # Заключение
 
 В данной статье мы рассмотрели как Named Pipes, преимущественно используемые для взаимодействия между разными процессами, могут быть использованы в сценариях, где требуется обмен данными между приложениями на разных версиях .NET. 
